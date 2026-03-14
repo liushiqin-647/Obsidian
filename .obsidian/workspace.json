@@ -4,7 +4,7 @@
     "type": "split",
     "children": [
       {
-        "id": "ca6fa2a9326b8c36",
+        "id": "3f6cbd03d8d1be0e",
         "type": "split",
         "children": [
           {
@@ -15,24 +15,24 @@
                 "id": "b1aa0b82f085a928",
                 "type": "leaf",
                 "state": {
-                  "type": "markdown",
+                  "type": "split-diff-view",
                   "state": {
-                    "file": "linux/命令.md",
-                    "mode": "source",
-                    "source": false
+                    "aFile": "内核函数/宏定义.md",
+                    "bFile": "内核函数/宏定义.md",
+                    "aRef": ""
                   },
-                  "icon": "lucide-file",
-                  "title": "命令"
+                  "icon": "diff",
+                  "title": "Diff: 宏定义  (Working Tree)"
                 }
               }
             ]
           },
           {
-            "id": "3fd188cd0e99faa9",
+            "id": "03218a8a58bfc9a8",
             "type": "tabs",
             "children": [
               {
-                "id": "9913333f5051dca2",
+                "id": "ad47ca82ac8c3756",
                 "type": "leaf",
                 "state": {
                   "type": "mindmap-nextgen-plugin",
@@ -189,8 +189,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -201,25 +200,24 @@
       "daily-notes:打开/创建今天的日记": false,
       "templates:插入模板": false,
       "command-palette:打开命令面板": false,
-      "obsidian-excalidraw-plugin:新建绘图文件": false,
-      "copilot:Open Copilot Chat": false,
+      "obsidian-excalidraw-plugin:New drawing": false,
       "obsidian-git:Open Git source control": false
     }
   },
-  "active": "2913cce05adea7ed",
+  "active": "b1aa0b82f085a928",
   "lastOpenFiles": [
-    "工作/cve_commit.md",
-    "git/Patch/内核 patch.md",
     "工作/cve_tool.md",
+    "工作/cve_commit.md",
     "linux/命令.md",
+    "git/Patch/文件结构.md",
+    "git/Patch/内核 patch.md",
+    "内核函数/宏定义.md",
     "调度.md",
     "linux",
-    "git/Patch/文件结构.md",
     "工作",
     "内核函数/fs.md",
     "内核函数/字符串.md",
     "内核函数/内存.md",
-    "内核函数/宏定义.md",
     "copilot/copilot-custom-prompts/Make shorter.md",
     "copilot/copilot-custom-prompts/Generate table of contents.md",
     "copilot/copilot-custom-prompts/Generate glossary.md",
