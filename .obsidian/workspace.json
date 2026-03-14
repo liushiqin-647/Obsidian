@@ -15,14 +15,14 @@
                 "id": "b1aa0b82f085a928",
                 "type": "leaf",
                 "state": {
-                  "type": "split-diff-view",
+                  "type": "markdown",
                   "state": {
-                    "aFile": "内核函数/宏定义.md",
-                    "bFile": "内核函数/宏定义.md",
-                    "aRef": ""
+                    "file": "工作/cve_commit.md",
+                    "mode": "source",
+                    "source": false
                   },
-                  "icon": "diff",
-                  "title": "Diff: 宏定义  (Working Tree)"
+                  "icon": "lucide-file",
+                  "title": "cve_commit"
                 }
               }
             ]

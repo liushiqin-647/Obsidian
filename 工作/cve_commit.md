@@ -1,5 +1,5 @@
 # collect_patch_msg
-## git add patches/* (现在在哪个目录下面啊！！！)
+## git add patches/* (现在在哪个目录下面啊！！)
 ## 获取新创建的补丁文件的路径
 ## 遍历每个新补丁
 ### 设置 no_need_module
