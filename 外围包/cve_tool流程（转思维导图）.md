@@ -93,7 +93,7 @@
 ```
 [Backport]${title}
 Offering:EulerOS Server/EulerOS
-CVE:${cve_id}
+CVE:${cve_id}/na
 Reference:${g_references}
 Conflict:no
 Type:${type}
