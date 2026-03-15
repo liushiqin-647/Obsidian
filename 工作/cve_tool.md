@@ -69,30 +69,40 @@
 ###### 是，设置 file 为第一个修改的 include 文件路径
 ###### 不是，设置 file 为第一个修改的非 include 文件路径
 ##### file去掉前面的 a/，删除 include 字段
-#### 设置 file_path 为存在的最深路径，拷贝 hulk 补丁到该路径下
+##### 设置 file_path 为存在的最深路径，拷贝 hulk 补丁到该路径下
 
 
 ### cve_commit
 
 #### collect_patch_msg
-##### git add patches/* (现在在哪个目录下面啊！！！)
-##### 获取新创建的补丁文件的路径
+##### git add patches/* (现在在 cd ${kernel_dir}，这里只有hulk补丁)
+##### 获取所有 git add 文件的路径 patch_set
 ##### 遍历每个新补丁
-###### 设置 no_need_module
-###### 从补丁文件中获取 commiid
-###### 在 g_references 中追加 \${reference_prefix}\${commitid}
+###### 设置 ${MODULE}
+###### 从补丁文件中获取本次提交的 commiid（补丁哈希值）
+###### 在 g_references 中追加 \${reference_prefix}\${commitid}（就是 hulk仓库本次提交的url ）
 #####  设置 SUBJECT 为 ${kernel_dir}/patch/kernel_cve.tmp 中的第一行，并删除 SUBECT 中最后两个字符
 ##### 设置 MODULE 为空 
 
 
 #### git_commit
 ##### 设置 type，cve_id（逗号替换空格），module，g_reference（换行替换空格），num
-##### 如果 cve 的数量小于 1，设置 title=${SUBJECT}，否则 title = ${module}fix ${CVE_ID}
+##### 如果 cve 的数量小于 1，设置 title=${SUBJECT}，否则 title = \${module} fix \${CVE_ID}
 ##### 设置 sub 为 SUBJECT 中将;替换为;\n
 ##### 设置 log
+```
+[Backport]${title}
+Offering:EulerOS Server/EulerOS
+CVE:${cve_id}
+Reference:${g_references}
+Conflict:no
+Type:${type}
+DTS/AR:${DTS}
+reason:${sub}
+```
 ##### git add patches/*
 ##### git commit -m "${log}"
-##### 推送远程仓库 git push -f liushiqin HEAD:${DST_BRANCH} 保存输出到 ${kernel_dir}/patch/kernel_cve.tmp
+##### 推送远程仓库 git push -f liushiqin HEAD:\${DST_BRANCH} 保存输出到 \${kernel_dir}/patch/kernel_cve.tmp
 
 
 #### upstream_hulk_diff（可选）
