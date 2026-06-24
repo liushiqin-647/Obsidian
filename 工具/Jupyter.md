@@ -11,7 +11,5 @@ uv pip install ipykernel
 **Linux / macOS：**
 
 ```bash
-.venv/bin/python -m ipykernel install --user \
-  --name=numpy-100 \
-  --display-name="Python (numpy-100)"
+python -m ipykernel install --user --name numpy-100 --display-name "Python (numpy-100)"
 ```
