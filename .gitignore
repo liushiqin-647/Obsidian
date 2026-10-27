@@ -1,0 +1,12 @@
+# Obsidian 本地配置与临时文件
+.obsidian/
+.trash/
+
+# Copilot / OpenCode 本地数据
+.copilot/
+.opencode/
+copilot/
+
+# 系统文件
+.DS_Store
+Thumbs.db
