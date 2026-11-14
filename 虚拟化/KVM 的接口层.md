@@ -11,13 +11,19 @@ QEMU 在用户态，KVM 在内核态，两边不能直接调函数。QEMU 能碰
 
 ## 1. 三层 fd
 
-| fd | 从哪来 | 典型 ioctl | 管什么 |
-|---|---|---|---|
-| `/dev/kvm` | `open("/dev/kvm")` | `KVM_GET_API_VERSION`、`KVM_CREATE_VM` | 全局：版本、建虚拟机 |
-| vm fd | `KVM_CREATE_VM` 的返回值 | `KVM_CREATE_VCPU`、`KVM_SET_USER_MEMORY_REGION` | 一台虚拟机：内存和 vCPU |
-| vcpu fd | `KVM_CREATE_VCPU` 的返回值 | `KVM_RUN`、`KVM_GET_REGS`、`KVM_SET_LAPIC` | 一颗 vCPU：跑与停、寄存器、中断 |
+QEMU 手里不是一个 fd，而是三个：打开设备得到一个，建虚拟机得到第二个，建 vCPU 得到第三个。三者是逐层造出来的关系，不是并列的三个句柄。
 
-每一层只认自己那一层的 ioctl。拿 vcpu fd 去发 `KVM_CREATE_VM` 会失败，反过来也一样。
+| fd | 从哪来 | 典型 ioctl | 命令码的作用 |
+|---|---|---|---|
+| `/dev/kvm` | `open("/dev/kvm")` 的返回值 | `KVM_GET_API_VERSION`<br>`KVM_CREATE_VM`<br>`KVM_GET_VCPU_MMAP_SIZE` | 返回接口版本号，确认用户态和内核这套接口对得上<br>建一台虚拟机，返回 vm fd<br>告诉用户态 vcpu fd 上的共享区要 mmap 多大，一般一页 |
+| vm fd | `KVM_CREATE_VM` 的返回值 | `KVM_CREATE_VCPU`<br>`KVM_SET_USER_MEMORY_REGION` | 在这台虚拟机里建一颗 vCPU，返回 vcpu fd<br>把 QEMU 用 `mmap` 申请的一段内存登记给 KVM，作为 guest 的物理内存 |
+| vcpu fd | `KVM_CREATE_VCPU` 的返回值 | `KVM_RUN`<br>`KVM_GET_REGS`<br>`KVM_SET_LAPIC` | 让这颗 vCPU 进入 guest 执行，直到某件事触发 Exit<br>读回它的通用寄存器<br>设它的本地中断控制器（LAPIC）状态 |
+
+三层是逐层派生的：vcpu fd 由 vm fd 造出来，vm fd 由 `/dev/kvm` 造出来，所以同一个命令码发错层就不会被接受。拿 vcpu fd 去发 `KVM_CREATE_VM`，或者拿 `/dev/kvm` 去发 `KVM_RUN`，内核都直接返回错误。
+
+表里“一段内存”指 QEMU 启动时用 `mmap` 申请的一块匿名内存，落在 QEMU 自己的地址空间里。登记就是把这批页的起始地址、长度，和它在 guest 里的起始 GPA 一起告诉 KVM，之后两边读写同一批页，不拷贝。
+
+另一块共享区是 vcpu fd 上的 **`kvm_run`**，一页大小。`KVM_RUN` 每次退出都把原因写进它的 `exit_reason` 字段，QEMU 读这个字段决定下一步。
 
 ## 2. 一次最短的启动
 
@@ -61,7 +67,7 @@ for (;;) {
 
 ioctl 搬的是指令，不是数据。真正在动的数据有两条路。
 
-- **共享内存**：guest 的物理内存本来就是 QEMU mmap 出来的，登记之后 KVM 直接读写同一批页，没有拷贝。`kvm_run` 也是 mmap 出来的，它是一块双方共用的状态区。
+- **共享内存**：guest 的物理内存就是 §1 登记的那批页，KVM 直接读写，中途没有拷贝。`kvm_run` 也是 mmap 出来的，它是双方共用的一块状态区。
 - **eventfd**：ioeventfd 把“guest 写了某个地址”直接接到 KVM，irqfd 把“该给 guest 发中断”接到 KVM。这两种通知都不经过 QEMU 用户态。
 
 所以三样东西各管一段：ioctl 管配置和启动，共享内存管数据，eventfd 管异步通知。
