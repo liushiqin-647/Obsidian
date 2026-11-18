@@ -1,5 +1,3 @@
-# KVM 的接口层
-
 > [!abstract] 一句话
 > QEMU 和 KVM 之间没有函数调用，只有三个 fd 上的 ioctl、两块共享内存和一组 eventfd。
 

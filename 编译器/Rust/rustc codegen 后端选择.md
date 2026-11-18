@@ -1,5 +1,3 @@
-# rustc 如何选择 codegen 后端
-
 rustc 使用 LLVM 后端生成机器码，但这**不是前端决定的**——是 rustc 的 driver 在编译开始前就选定的。rustc 支持多个 codegen 后端，前端本身对此一无所知。
 
 ## 流程
