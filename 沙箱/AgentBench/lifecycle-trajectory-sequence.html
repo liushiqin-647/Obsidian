@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentBench lifecycle：单条轨迹执行顺序</title>
+<style>
+  :root {
+    --ink: #0f172a;
+    --muted: #475569;
+    --line: #cbd5e1;
+    --bg: #eef2f7;
+    --card: #ffffff;
+    --worker: #2563eb;
+    --sched: #7c3aed;
+    --aenv: #0891b2;
+    --fc: #ea580c;
+    --guest: #16a34a;
+    --report: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1460px; margin: 0 auto; padding: 36px 28px 56px; }
+  h1 { font-size: 24px; letter-spacing: .2px; margin: 0 0 8px; }
+  h2 { font-size: 17px; margin: 34px 0 4px; letter-spacing: .2px; }
+  h2 + .sub { margin-top: 6px; }
+  .sub { color: var(--muted); font-size: 14px; line-height: 1.7; margin: 0 0 18px; }
+  .sub b { color: var(--ink); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+  .chip {
+    font-size: 12px; color: var(--muted); background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 999px; padding: 5px 11px;
+  }
+  .chip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .card {
+    background: var(--card); border: 1px solid #e2e8f0; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .05);
+    overflow: hidden;
+  }
+  .diagram { padding: 10px 6px 0; overflow-x: auto; }
+  svg { display: block; width: 100%; min-width: 980px; height: auto; }
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 16px; }
+  table.api {
+    width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 12px; overflow: hidden; font-size: 12.5px;
+  }
+  table.api th, table.api td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  table.api th { background: #f8fafc; color: #334155; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  table.api tr:last-child td { border-bottom: 0; }
+  table.api td:first-child { white-space: nowrap; color: #0f172a; font-weight: 600; }
+  table.api code { white-space: nowrap; }
+  .api-wrap { margin-top: 12px; overflow-x: auto; }
+  .note {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px;
+  }
+  .note h3 { font-size: 13px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  .note h3 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .note p, .note li { font-size: 12.5px; line-height: 1.75; color: var(--muted); margin: 0; }
+  .note ul { margin: 0; padding-left: 16px; }
+  .note li + li { margin-top: 3px; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; background: #f1f5f9; border: 1px solid #e2e8f0;
+    padding: 1px 5px; border-radius: 5px; color: #0f172a;
+  }
+  .foot { margin-top: 14px; font-size: 12px; color: #64748b; line-height: 1.7; }
+  .foot code { font-size: 11px; }
+  .branches { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 16px; }
+  .branch { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; }
+  .branch h3 { font-size: 13px; margin: 0 0 8px; }
+  .branch ol { margin: 0; padding-left: 18px; }
+  .branch li { font-size: 12.5px; line-height: 1.75; color: var(--muted); }
+  .branch li + li { margin-top: 5px; }
+  .tag {
+    display: inline-block; font-size: 10.5px; font-weight: 600; color: #334155;
+    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 5px;
+    padding: 0 6px; margin-right: 4px; vertical-align: 1px;
+  }
+  .glossary { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 16px; }
+  .term { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
+  .term b { font-size: 13px; }
+  .term p { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 6px 0 0; }
+  .callout {
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px;
+    padding: 14px 16px; font-size: 13px; line-height: 1.85; color: #1e3a8a; margin-top: 16px;
+  }
+  .formula { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+  .f-item {
+    display: flex; align-items: baseline; gap: 8px; padding: 10px 16px;
+    border-radius: 10px; border: 1px solid #e2e8f0; background: #fff;
+  }
+  .f-item b { font-size: 12px; font-weight: 600; color: #475569; }
+  .f-item em { font-style: normal; font-size: 15px; font-weight: 700; }
+  .f-item.blue em { color: #1d4ed8; }
+  .f-item.green em { color: #15803d; }
+  .f-item.gray em { color: #475569; }
+  .f-op { font-size: 16px; font-weight: 700; color: #94a3b8; }
+  .ep-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 14px; }
+  .ep {
+    display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 10px; padding: 10px 12px; font-size: 12px; color: #334155;
+  }
+  .m {
+    flex: none; font-size: 10px; font-weight: 700; letter-spacing: .4px; color: #fff;
+    padding: 3px 7px; border-radius: 5px;
+  }
+  .m.post { background: #2563eb; }
+  .m.get { background: #16a34a; }
+  .m.del { background: #dc2626; }
+  .ep code { border: 0; background: transparent; padding: 0; font-size: 11.5px; }
+  .walk { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 22px; }
+  .walk ol { margin: 0; padding-left: 20px; }
+  .walk li { font-size: 13px; line-height: 1.9; color: #334155; }
+  .walk li + li { margin-top: 2px; }
+  @media print {
+    body { background: #fff; }
+    .wrap { padding: 0; }
+    .card, .note, .branch { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>lifecycle 模式下，一条轨迹是怎么跑完的</h1>
+  <p class="sub">
+    k×N 个沙箱里，同一时刻只有 N 个真占内存；其余都只是磁盘上的快照。
+  </p>
+  <div class="chips">
+    <span class="chip"><i style="background:var(--worker)"></i>实线 = 调用 / 请求</span>
+    <span class="chip"><i style="background:var(--sched)"></i>虚线 = 返回 / 回调</span>
+    <span class="chip">① ② 创建与初始暂停</span>
+    <span class="chip">③–⑧ 每个 step 循环一次</span>
+    <span class="chip">⑨–⑪ 收尾</span>
+    <span class="chip">灰色小字 = 用什么方式传</span>
+  </div>
+
+  <h2>先看三样东西</h2>
+  <div class="formula">
+    <span class="f-item blue"><b>总数</b><em>k × N</em></span>
+    <span class="f-op">=</span>
+    <span class="f-item green"><b>同时最多</b><em>N 个在跑</em></span>
+    <span class="f-op">+</span>
+    <span class="f-item gray"><b>其余</b><em>磁盘上的快照</em></span>
+  </div>
+
+  <div class="chips" style="margin-top:14px">
+    <span class="chip"><b>轨迹</b>　一次任务录像</span>
+    <span class="chip"><b>沙箱</b>　跑命令的虚拟机</span>
+    <span class="chip"><b>快照</b>　内存存成文件</span>
+    <span class="chip"><b>N</b>　同时能跑几个</span>
+    <span class="chip"><b>唤醒 / 暂停</b>　拉起 / 存回</span>
+    <span class="chip"><b>探活</b>　试跑一条 true</span>
+    <span class="chip"><b>envd</b>　沙箱里接命令的服务</span>
+    <span class="chip"><b>AENV</b>　管沙箱的服务</span>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="diagram">
+      <svg viewBox="0 0 1400 470" role="img" aria-label="轨迹、沙箱、快照与超卖关系图">
+        <defs>
+          <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"></path>
+          </marker>
+        </defs>
+
+        <!-- top: trajectory -> sandbox -> snapshot -->
+        <rect x="40" y="30" width="300" height="112" rx="10" fill="#dbeafe" stroke="#2563eb"></rect>
+        <text x="190" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a8a">轨迹</text>
+        <text x="190" y="88" text-anchor="middle" font-size="12.5" fill="#1e40af">一次真实任务的录像</text>
+        <text x="190" y="110" text-anchor="middle" font-size="12" fill="#3b82f6">命令 1 → 命令 2 → …</text>
+        <rect x="76" y="120" width="42" height="8" rx="4" fill="#93c5fd"></rect>
+        <rect x="126" y="120" width="42" height="8" rx="4" fill="#93c5fd"></rect>
+        <rect x="176" y="120" width="42" height="8" rx="4" fill="#93c5fd"></rect>
+        <rect x="226" y="120" width="42" height="8" rx="4" fill="#bfdbfe"></rect>
+
+        <line x1="344" y1="86" x2="414" y2="86" stroke="#475569" stroke-width="1.8" marker-end="url(#arrA)"></line>
+
+        <rect x="418" y="30" width="252" height="112" rx="10" fill="#dcfce7" stroke="#16a34a"></rect>
+        <text x="544" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#14532d">沙箱</text>
+        <text x="544" y="88" text-anchor="middle" font-size="12.5" fill="#15803d">跑命令的虚拟机</text>
+        <text x="544" y="110" text-anchor="middle" font-size="12" fill="#22c55e">一条轨迹占一个</text>
+
+        <line x1="674" y1="86" x2="744" y2="86" stroke="#475569" stroke-width="1.8" marker-end="url(#arrA)"></line>
+
+        <rect x="748" y="30" width="262" height="112" rx="10" fill="#ffedd5" stroke="#ea580c"></rect>
+        <text x="879" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#7c2d12">快照</text>
+        <text x="879" y="88" text-anchor="middle" font-size="12.5" fill="#c2410c">内存原样存成磁盘文件</text>
+        <text x="879" y="110" text-anchor="middle" font-size="12" fill="#f97316">存完可以杀掉进程</text>
+
+        <rect x="1046" y="46" width="320" height="34" rx="17" fill="#fff7ed" stroke="#fdba74"></rect>
+        <text x="1206" y="68" text-anchor="middle" font-size="12.5" fill="#9a3412">暂停 = 存快照 + 杀进程</text>
+        <rect x="1046" y="94" width="320" height="34" rx="17" fill="#ecfeff" stroke="#67e8f9"></rect>
+        <text x="1206" y="116" text-anchor="middle" font-size="12.5" fill="#155e75">唤醒 = 从快照拉起</text>
+
+        <!-- bottom: oversub grid -->
+        <text x="40" y="188" font-size="14" font-weight="700" fill="#0f172a">超卖：总数 k×N，但同一时刻只有 N 个真占内存</text>
+        <text x="40" y="212" font-size="12" fill="#64748b">示例：N = 4，k = 3，共 12 个沙箱</text>
+
+        <g font-size="12.5">
+          <rect x="60" y="228" width="150" height="70" rx="9" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text x="135" y="258" text-anchor="middle" font-weight="700" fill="#14532d">醒着</text>
+          <text x="135" y="280" text-anchor="middle" fill="#15803d">占内存</text>
+
+          <rect x="225" y="228" width="150" height="70" rx="9" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text x="300" y="258" text-anchor="middle" font-weight="700" fill="#14532d">醒着</text>
+          <text x="300" y="280" text-anchor="middle" fill="#15803d">占内存</text>
+
+          <rect x="390" y="228" width="150" height="70" rx="9" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text x="465" y="258" text-anchor="middle" font-weight="700" fill="#14532d">醒着</text>
+          <text x="465" y="280" text-anchor="middle" fill="#15803d">占内存</text>
+
+          <rect x="555" y="228" width="150" height="70" rx="9" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text x="630" y="258" text-anchor="middle" font-weight="700" fill="#14532d">醒着</text>
+          <text x="630" y="280" text-anchor="middle" fill="#15803d">占内存</text>
+
+          <rect x="720" y="228" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="795" y="258" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="795" y="280" text-anchor="middle" fill="#64748b">磁盘快照</text>
+
+          <rect x="885" y="228" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="960" y="258" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="960" y="280" text-anchor="middle" fill="#64748b">磁盘快照</text>
+
+          <rect x="60" y="316" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="135" y="346" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="135" y="368" text-anchor="middle" fill="#64748b">磁盘快照</text>
+
+          <rect x="225" y="316" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="300" y="346" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="300" y="368" text-anchor="middle" fill="#64748b">磁盘快照</text>
+
+          <rect x="390" y="316" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="465" y="346" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="465" y="368" text-anchor="middle" fill="#64748b">磁盘快照</text>
+
+          <rect x="555" y="316" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="630" y="346" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="630" y="368" text-anchor="middle" fill="#64748b">磁盘快照</text>
+
+          <rect x="720" y="316" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="795" y="346" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="795" y="368" text-anchor="middle" fill="#64748b">磁盘快照</text>
+
+          <rect x="885" y="316" width="150" height="70" rx="9" fill="#e2e8f0" stroke="#94a3b8"></rect>
+          <text x="960" y="346" text-anchor="middle" font-weight="700" fill="#334155">睡着</text>
+          <text x="960" y="368" text-anchor="middle" fill="#64748b">磁盘快照</text>
+        </g>
+
+        <path d="M 1046 250 C 1110 250, 1110 290, 1046 290" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrA)"></path>
+        <text x="1132" y="250" font-size="12" font-weight="600" fill="#6d28d9">暂停一个</text>
+        <text x="1132" y="292" font-size="12" font-weight="600" fill="#6d28d9">唤醒一个</text>
+        <text x="1132" y="330" font-size="12" fill="#64748b">绿色：此刻真占内存</text>
+        <text x="1132" y="352" font-size="12" fill="#64748b">灰色：只是磁盘文件</text>
+      </svg>
+    </div>
+  </div>
+
+  <h2>总览：一条轨迹的完整生命周期</h2>
+  <div class="card">
+    <div class="diagram">
+      <svg viewBox="0 0 1260 1130" role="img" aria-label="lifecycle 单条轨迹顺序图">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"></path>
+          </marker>
+          <style>
+            .lane { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 4 6; }
+            .msg { stroke-width: 1.6; fill: none; }
+            .ret { stroke-width: 1.3; fill: none; stroke-dasharray: 6 4; }
+            .lbl {
+              font-size: 12.5px; fill: #334155;
+              paint-order: stroke; stroke: #ffffff; stroke-width: 4px; stroke-linejoin: round;
+            }
+            .num { font-size: 12.5px; font-weight: 700; fill: #0f172a; }
+            .proto {
+              font-size: 10.5px; font-weight: 600; fill: #64748b;
+              paint-order: stroke; stroke: #ffffff; stroke-width: 3px;
+            }
+            .head { font-size: 13px; font-weight: 600; fill: #0f172a; }
+            .looplabel { font-size: 12.5px; font-weight: 600; fill: #475569; }
+          </style>
+        </defs>
+
+        <g>
+          <rect x="22" y="18" width="156" height="56" rx="9" fill="#dbeafe" stroke="#2563eb"></rect>
+          <text class="head" x="100" y="51" text-anchor="middle">Worker（执行线程）</text>
+
+          <rect x="242" y="18" width="156" height="56" rx="9" fill="#ede9fe" stroke="#7c3aed"></rect>
+          <text class="head" x="320" y="43" text-anchor="middle">运行名额调度器</text>
+          <text x="320" y="60" text-anchor="middle" font-size="11.5" fill="#6d28d9">上限 N，FIFO</text>
+
+          <rect x="462" y="18" width="156" height="56" rx="9" fill="#cffafe" stroke="#0891b2"></rect>
+          <text class="head" x="540" y="51" text-anchor="middle">AENV 控制面</text>
+
+          <rect x="682" y="18" width="156" height="56" rx="9" fill="#ffedd5" stroke="#ea580c"></rect>
+          <text class="head" x="760" y="43" text-anchor="middle">Firecracker</text>
+          <text x="760" y="60" text-anchor="middle" font-size="11.5" fill="#c2410c">内存 / 快照</text>
+
+          <rect x="902" y="18" width="156" height="56" rx="9" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text class="head" x="980" y="43" text-anchor="middle">沙箱内命令</text>
+          <text x="980" y="60" text-anchor="middle" font-size="11.5" fill="#15803d">shell / 编辑器</text>
+
+          <rect x="1092" y="18" width="146" height="56" rx="9" fill="#e2e8f0" stroke="#64748b"></rect>
+          <text class="head" x="1165" y="51" text-anchor="middle">结果文件</text>
+        </g>
+
+        <g class="lane">
+          <line x1="100" y1="74" x2="100" y2="1100"></line>
+          <line x1="320" y1="74" x2="320" y2="1100"></line>
+          <line x1="540" y1="74" x2="540" y2="1100"></line>
+          <line x1="760" y1="74" x2="760" y2="1100"></line>
+          <line x1="980" y1="74" x2="980" y2="1100"></line>
+          <line x1="1165" y1="74" x2="1165" y2="1100"></line>
+        </g>
+
+        <g>
+          <line class="msg" x1="100" y1="140" x2="540" y2="140" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="320" y="132" text-anchor="middle"><tspan class="num">①</tspan> create_all：一次建齐 k×N 个沙箱　<tspan class="proto">POST /sandboxes</tspan></text>
+
+          <line class="msg" x1="540" y1="185" x2="760" y2="185" stroke="#0891b2" marker-end="url(#arr)"></line>
+          <text class="lbl" x="650" y="177" text-anchor="middle">启动 firecracker 进程</text>
+
+          <line class="msg" x1="100" y1="235" x2="540" y2="235" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="320" y="227" text-anchor="middle"><tspan class="num">②</tspan> 初始 pause（每个沙箱只做一次）　<tspan class="proto">POST /sandboxes/{id}/pause</tspan></text>
+
+          <line class="msg" x1="540" y1="275" x2="760" y2="275" stroke="#0891b2" marker-end="url(#arr)"></line>
+          <text class="lbl" x="650" y="267" text-anchor="middle">内存写成快照 → 杀进程 → 释放内存</text>
+        </g>
+
+        <rect x="30" y="315" width="1200" height="592" rx="10"
+              fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="7 5"></rect>
+        <rect x="42" y="302" width="330" height="26" rx="6" fill="#f8fafc" stroke="#94a3b8" stroke-width="1"></rect>
+        <text class="looplabel" x="54" y="320">③–⑧ 对轨迹里的每一个 step 循环一次</text>
+
+        <g>
+          <path class="msg" d="M 100 380 h 46 v 26 h -46" stroke="#2563eb" marker-end="url(#arr)"></path>
+          <text class="lbl" x="160" y="395"><tspan class="num">③</tspan> 等待录制间隔（think time × delay_scale）</text>
+
+          <line class="msg" x1="100" y1="445" x2="320" y2="445" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="210" y="437" text-anchor="middle"><tspan class="num">④</tspan> acquire：排队领运行名额</text>
+
+          <line class="ret" x1="320" y1="480" x2="100" y2="480" stroke="#7c3aed" marker-end="url(#arr)"></line>
+          <text class="lbl" x="210" y="472" text-anchor="middle">granted；排队时长 = capacity_wait</text>
+
+          <line class="msg" x1="100" y1="530" x2="540" y2="530" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="320" y="522" text-anchor="middle"><tspan class="num">⑤</tspan> resume　<tspan class="proto">POST /sandboxes/{id}/connect</tspan></text>
+
+          <line class="msg" x1="540" y1="570" x2="760" y2="570" stroke="#0891b2" marker-end="url(#arr)"></line>
+          <text class="lbl" x="650" y="562" text-anchor="middle">从快照恢复，页按需读入</text>
+
+          <line class="ret" x1="760" y1="610" x2="100" y2="610" stroke="#ea580c" marker-end="url(#arr)"></line>
+          <text class="lbl" x="430" y="602" text-anchor="middle">ready（可选：true 探活）</text>
+
+          <line class="msg" x1="100" y1="650" x2="980" y2="650" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="540" y="642" text-anchor="middle"><tspan class="num">⑥</tspan> 执行录制的命令（action_timeout）　<tspan class="proto">POST /process.Process/Start</tspan></text>
+
+          <line class="ret" x1="980" y1="690" x2="100" y2="690" stroke="#16a34a" marker-end="url(#arr)"></line>
+          <text class="lbl" x="540" y="682" text-anchor="middle">exit_code / 输出</text>
+
+          <line class="msg" x1="100" y1="730" x2="540" y2="730" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="320" y="722" text-anchor="middle"><tspan class="num">⑦</tspan> pause　<tspan class="proto">POST /sandboxes/{id}/pause</tspan></text>
+
+          <line class="msg" x1="540" y1="770" x2="760" y2="770" stroke="#0891b2" marker-end="url(#arr)"></line>
+          <text class="lbl" x="650" y="762" text-anchor="middle">写回快照 → 杀进程 → 释放内存</text>
+
+          <line class="ret" x1="760" y1="810" x2="100" y2="810" stroke="#ea580c" marker-end="url(#arr)"></line>
+          <text class="lbl" x="430" y="802" text-anchor="middle">pause 完成（记录快照大小）</text>
+
+          <line class="msg" x1="100" y1="850" x2="320" y2="850" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="210" y="842" text-anchor="middle"><tspan class="num">⑧</tspan> release 名额</text>
+
+          <line class="ret" x1="320" y1="885" x2="100" y2="885" stroke="#7c3aed" marker-end="url(#arr)"></line>
+          <text class="lbl" x="210" y="877" text-anchor="middle">唤醒队首，下一个沙箱获准</text>
+        </g>
+
+        <g>
+          <path class="msg" d="M 100 950 h 46 v 26 h -46" stroke="#2563eb" marker-end="url(#arr)"></path>
+          <text class="lbl" x="160" y="965"><tspan class="num">⑨</tspan> 所有 step 跑完 → 标记这条轨迹完成</text>
+
+          <line class="msg" x1="100" y1="1010" x2="540" y2="1010" stroke="#2563eb" marker-end="url(#arr)"></line>
+          <text class="lbl" x="320" y="1002" text-anchor="middle"><tspan class="num">⑩</tspan> 基准结束：清理并 kill 所有沙箱　<tspan class="proto">DELETE /sandboxes/{id}</tspan></text>
+
+          <line class="ret" x1="100" y1="1060" x2="1165" y2="1060" stroke="#64748b" marker-end="url(#arr)"></line>
+          <text class="lbl" x="630" y="1052" text-anchor="middle"><tspan class="num">⑪</tspan> 写 step 指标 / 轨迹明细 / 汇总报告　<tspan class="proto">本地文件 · JSONL / CSV</tspan></text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <h2>一条轨迹的循环</h2>
+  <div class="card">
+    <div class="diagram">
+      <svg viewBox="0 0 1400 380" role="img" aria-label="一条轨迹的循环流程图">
+        <defs>
+          <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"></path>
+          </marker>
+        </defs>
+
+        <text x="30" y="38" font-size="13" fill="#64748b">
+          k×N 个沙箱并行，但同一时刻只有 N 个能走这个循环
+        </text>
+
+        <g font-size="13">
+          <rect x="30" y="100" width="168" height="78" rx="10" fill="#dbeafe" stroke="#2563eb"></rect>
+          <text x="114" y="132" text-anchor="middle" font-weight="700" fill="#1e3a8a">1 等录制间隔</text>
+          <text x="114" y="156" text-anchor="middle" font-size="11.5" fill="#3b82f6">按原节奏等待</text>
+
+          <rect x="220" y="100" width="168" height="78" rx="10" fill="#ede9fe" stroke="#7c3aed"></rect>
+          <text x="304" y="132" text-anchor="middle" font-weight="700" fill="#4c1d95">2 领运行名额</text>
+          <text x="304" y="156" text-anchor="middle" font-size="11.5" fill="#7c3aed">满了就排队</text>
+
+          <rect x="410" y="100" width="168" height="78" rx="10" fill="#cffafe" stroke="#0891b2"></rect>
+          <text x="494" y="132" text-anchor="middle" font-weight="700" fill="#155e75">3 唤醒沙箱</text>
+          <text x="494" y="156" text-anchor="middle" font-size="11.5" fill="#0e7490">从快照恢复内存</text>
+
+          <rect x="600" y="100" width="168" height="78" rx="10" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text x="684" y="132" text-anchor="middle" font-weight="700" fill="#14532d">4 执行命令</text>
+          <text x="684" y="156" text-anchor="middle" font-size="11.5" fill="#15803d">交给 envd</text>
+
+          <rect x="790" y="100" width="168" height="78" rx="10" fill="#ffedd5" stroke="#ea580c"></rect>
+          <text x="874" y="132" text-anchor="middle" font-weight="700" fill="#7c2d12">5 暂停存快照</text>
+          <text x="874" y="156" text-anchor="middle" font-size="11.5" fill="#c2410c">杀进程、放内存</text>
+
+          <rect x="980" y="100" width="168" height="78" rx="10" fill="#ede9fe" stroke="#7c3aed"></rect>
+          <text x="1064" y="132" text-anchor="middle" font-weight="700" fill="#4c1d95">6 归还名额</text>
+          <text x="1064" y="156" text-anchor="middle" font-size="11.5" fill="#7c3aed">放行下一个</text>
+
+          <rect x="1170" y="100" width="168" height="78" rx="10" fill="#e2e8f0" stroke="#64748b"></rect>
+          <text x="1254" y="132" text-anchor="middle" font-weight="700" fill="#334155">7 换下一条命令</text>
+          <text x="1254" y="156" text-anchor="middle" font-size="11.5" fill="#64748b">或换下一条轨迹</text>
+        </g>
+
+        <line x1="200" y1="139" x2="214" y2="139" stroke="#475569" stroke-width="1.8" marker-end="url(#arrB)"></line>
+        <line x1="390" y1="139" x2="404" y2="139" stroke="#475569" stroke-width="1.8" marker-end="url(#arrB)"></line>
+        <line x1="580" y1="139" x2="594" y2="139" stroke="#475569" stroke-width="1.8" marker-end="url(#arrB)"></line>
+        <line x1="770" y1="139" x2="784" y2="139" stroke="#475569" stroke-width="1.8" marker-end="url(#arrB)"></line>
+        <line x1="960" y1="139" x2="974" y2="139" stroke="#475569" stroke-width="1.8" marker-end="url(#arrB)"></line>
+        <line x1="1150" y1="139" x2="1164" y2="139" stroke="#475569" stroke-width="1.8" marker-end="url(#arrB)"></line>
+
+        <path d="M 1254 178 v 74 H 114 v -62" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrB)"></path>
+        <rect x="520" y="232" width="360" height="34" rx="17" fill="#f8fafc" stroke="#cbd5e1"></rect>
+        <text x="700" y="254" text-anchor="middle" font-size="12.5" fill="#475569">还有命令就继续循环；跑完换下一条轨迹</text>
+
+        <text x="30" y="330" font-size="12" fill="#64748b">每一步的执行者都是同一个 Worker 线程，换的只是“哪个沙箱现在有资格跑”。</text>
+      </svg>
+    </div>
+  </div>
+
+  <h2>单步放大：③–⑧ 内部到底发生了什么</h2>
+  <p class="sub">
+    下面这张图的编号是独立的，只描述“一个 step 的一次交互”。灰色 <span class="tag">可选</span> 的环节默认没开：
+    QPS（每秒最多发多少个请求）和并发配额要显式配置才生效，探活由 <code>ready_probe</code> 控制（lifecycle 默认开）。
+  </p>
+
+  <div class="card">
+    <div class="diagram">
+      <svg viewBox="0 0 1500 1150" role="img" aria-label="lifecycle 单步内部顺序图">
+        <defs>
+          <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"></path>
+          </marker>
+          <style>
+            .lane2 { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 4 6; }
+            .m2 { stroke-width: 1.6; fill: none; }
+            .r2 { stroke-width: 1.3; fill: none; stroke-dasharray: 6 4; }
+            .l2 {
+              font-size: 12px; fill: #334155;
+              paint-order: stroke; stroke: #ffffff; stroke-width: 4px; stroke-linejoin: round;
+            }
+            .n2 { font-size: 12px; font-weight: 700; fill: #0f172a; }
+            .p2 {
+              font-size: 10px; font-weight: 600; fill: #64748b;
+              paint-order: stroke; stroke: #ffffff; stroke-width: 3px;
+            }
+            .h2t { font-size: 12.5px; font-weight: 600; fill: #0f172a; }
+            .side { font-size: 11.5px; font-weight: 600; fill: #475569; }
+          </style>
+        </defs>
+
+        <g>
+          <rect x="10" y="18" width="160" height="56" rx="9" fill="#dbeafe" stroke="#2563eb"></rect>
+          <text class="h2t" x="90" y="51" text-anchor="middle">Worker</text>
+
+          <rect x="230" y="18" width="160" height="56" rx="9" fill="#ede9fe" stroke="#7c3aed"></rect>
+          <text class="h2t" x="310" y="43" text-anchor="middle">名额调度器</text>
+          <text x="310" y="60" text-anchor="middle" font-size="10.5" fill="#6d28d9">上限 N，FIFO</text>
+
+          <rect x="430" y="18" width="160" height="56" rx="9" fill="#f1f5f9" stroke="#94a3b8"></rect>
+          <text class="h2t" x="510" y="43" text-anchor="middle">QPS / 并发配额</text>
+          <text x="510" y="60" text-anchor="middle" font-size="10.5" fill="#64748b">可选，默认不限</text>
+
+          <rect x="630" y="18" width="160" height="56" rx="9" fill="#cffafe" stroke="#0891b2"></rect>
+          <text class="h2t" x="710" y="51" text-anchor="middle">AENV 控制面</text>
+
+          <rect x="830" y="18" width="150" height="56" rx="9" fill="#ffedd5" stroke="#ea580c"></rect>
+          <text class="h2t" x="905" y="43" text-anchor="middle">Firecracker</text>
+          <text x="905" y="60" text-anchor="middle" font-size="10.5" fill="#c2410c">内存 / 快照</text>
+
+          <rect x="1025" y="18" width="150" height="56" rx="9" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text class="h2t" x="1100" y="43" text-anchor="middle">envd / 命令</text>
+          <text x="1100" y="60" text-anchor="middle" font-size="10.5" fill="#15803d">沙箱内进程</text>
+
+          <rect x="1250" y="18" width="160" height="56" rx="9" fill="#e2e8f0" stroke="#64748b"></rect>
+          <text class="h2t" x="1330" y="43" text-anchor="middle">series.jsonl</text>
+          <text x="1330" y="60" text-anchor="middle" font-size="10.5" fill="#64748b">每事件一行</text>
+        </g>
+
+        <g class="lane2">
+          <line x1="90" y1="74" x2="90" y2="1120"></line>
+          <line x1="310" y1="74" x2="310" y2="1120"></line>
+          <line x1="510" y1="74" x2="510" y2="1120"></line>
+          <line x1="710" y1="74" x2="710" y2="1120"></line>
+          <line x1="905" y1="74" x2="905" y2="1120"></line>
+          <line x1="1100" y1="74" x2="1100" y2="1120"></line>
+          <line x1="1330" y1="74" x2="1330" y2="1120"></line>
+        </g>
+
+        <g>
+          <!-- 1 think time -->
+          <path class="m2" d="M 90 130 h 46 v 26 h -46" stroke="#2563eb" marker-end="url(#arr2)"></path>
+          <text class="l2" x="150" y="145"><tspan class="n2">①</tspan> 睡录制间隔：delay_time × delay_scale</text>
+          <text class="p2" x="150" y="162">记入 natural_delay_sec</text>
+
+          <!-- 2 qps -->
+          <line class="m2" x1="90" y1="205" x2="510" y2="205" stroke="#2563eb" marker-end="url(#arr2)"></line>
+          <text class="l2" x="300" y="197" text-anchor="middle"><tspan class="n2">②</tspan> 可选：resume 限速等待</text>
+          <line class="r2" x1="510" y1="240" x2="90" y2="240" stroke="#94a3b8" marker-end="url(#arr2)"></line>
+          <text class="l2" x="300" y="232" text-anchor="middle">放行（记入 resume_rate_pacing_wait_sec）</text>
+
+          <!-- 3 acquire -->
+          <line class="m2" x1="90" y1="290" x2="310" y2="290" stroke="#2563eb" marker-end="url(#arr2)"></line>
+          <text class="l2" x="200" y="282" text-anchor="middle"><tspan class="n2">③</tspan> acquire 名额（排队）</text>
+
+          <line class="r2" x1="310" y1="325" x2="90" y2="325" stroke="#7c3aed" marker-end="url(#arr2)"></line>
+          <text class="l2" x="200" y="317" text-anchor="middle">lease（记入 capacity_wait_sec）</text>
+
+          <line class="m2" x1="90" y1="365" x2="1330" y2="365" stroke="#64748b" marker-end="url(#arr2)"></line>
+          <text class="l2" x="710" y="357" text-anchor="middle"><tspan class="n2">④</tspan> 写 slot_acquire 事件</text>
+
+          <!-- 5 connect -->
+          <line class="m2" x1="90" y1="415" x2="710" y2="415" stroke="#2563eb" marker-end="url(#arr2)"></line>
+          <text class="l2" x="400" y="407" text-anchor="middle"><tspan class="n2">⑤</tspan> POST /sandboxes/{id}/connect</text>
+          <line class="m2" x1="710" y1="455" x2="905" y2="455" stroke="#0891b2" marker-end="url(#arr2)"></line>
+          <text class="l2" x="807" y="447" text-anchor="middle">读快照、恢复内存</text>
+          <text class="p2" x="807" y="472" text-anchor="middle">页按需读入（惰性）</text>
+          <line class="r2" x1="710" y1="500" x2="90" y2="500" stroke="#0891b2" marker-end="url(#arr2)"></line>
+          <text class="l2" x="400" y="492" text-anchor="middle">新句柄：sandbox_domain + envd_access_token</text>
+
+          <!-- 6 ready probe -->
+          <line class="m2" x1="90" y1="550" x2="1100" y2="550" stroke="#2563eb" marker-end="url(#arr2)"></line>
+          <text class="l2" x="595" y="542" text-anchor="middle"><tspan class="n2">⑥</tspan> 可选：探活 exec "true"（最多 5 次，每次 10s）</text>
+          <line class="r2" x1="1100" y1="585" x2="90" y2="585" stroke="#16a34a" marker-end="url(#arr2)"></line>
+          <text class="l2" x="595" y="577" text-anchor="middle">exit 0 → ready（记入 resume_ready_wait_sec）</text>
+
+          <!-- 7 exec -->
+          <line class="m2" x1="90" y1="635" x2="1100" y2="635" stroke="#2563eb" marker-end="url(#arr2)"></line>
+          <text class="l2" x="595" y="627" text-anchor="middle"><tspan class="n2">⑦</tspan> POST /process.Process/Start（命令 + action_timeout）</text>
+          <line class="r2" x1="1100" y1="670" x2="90" y2="670" stroke="#16a34a" marker-end="url(#arr2)"></line>
+          <text class="l2" x="595" y="662" text-anchor="middle">end 事件：exit_code + stdout + stderr（记入 exec_sec）</text>
+
+          <!-- 8 pause -->
+          <line class="m2" x1="90" y1="720" x2="710" y2="720" stroke="#2563eb" marker-end="url(#arr2)"></line>
+          <text class="l2" x="400" y="712" text-anchor="middle"><tspan class="n2">⑧</tspan> POST /sandboxes/{id}/pause</text>
+          <line class="m2" x1="710" y1="760" x2="905" y2="760" stroke="#0891b2" marker-end="url(#arr2)"></line>
+          <text class="l2" x="807" y="752" text-anchor="middle">写快照、杀进程、释放内存</text>
+          <line class="r2" x1="710" y1="800" x2="90" y2="800" stroke="#0891b2" marker-end="url(#arr2)"></line>
+          <text class="l2" x="400" y="792" text-anchor="middle">pause 确认（记入 pause_api_sec）</text>
+
+          <!-- 9 snapshot stat -->
+          <line class="m2" x1="90" y1="845" x2="1330" y2="845" stroke="#64748b" marker-end="url(#arr2)"></line>
+          <text class="l2" x="710" y="837" text-anchor="middle"><tspan class="n2">⑨</tspan> 后台线程统计快照目录大小 → snapshot_size</text>
+
+          <!-- 10 step event -->
+          <line class="m2" x1="90" y1="890" x2="1330" y2="890" stroke="#64748b" marker-end="url(#arr2)"></line>
+          <text class="l2" x="710" y="882" text-anchor="middle"><tspan class="n2">⑩</tspan> 写 step 事件：resume / exec / pause / 各段等待</text>
+
+          <!-- 11 release -->
+          <line class="m2" x1="90" y1="940" x2="310" y2="940" stroke="#2563eb" marker-end="url(#arr2)"></line>
+          <text class="l2" x="200" y="932" text-anchor="middle"><tspan class="n2">⑪</tspan> release 名额</text>
+          <line class="r2" x1="310" y1="975" x2="90" y2="975" stroke="#7c3aed" marker-end="url(#arr2)"></line>
+          <text class="l2" x="200" y="967" text-anchor="middle">唤醒队首（下一个沙箱）</text>
+
+          <!-- 12 baseline -->
+          <path class="m2" d="M 90 1020 h 46 v 26 h -46" stroke="#2563eb" marker-end="url(#arr2)"></path>
+          <text class="l2" x="150" y="1035"><tspan class="n2">⑫</tspan> prev_slice_end = now，作为下个 step 的计时基准</text>
+        </g>
+
+        <!-- lease bracket -->
+        <path d="M 1436 325 h 16 v 615 h -16" fill="none" stroke="#94a3b8" stroke-width="1.2"></path>
+        <text class="side" transform="rotate(-90 1466 632)" x="1466" y="632" text-anchor="middle">运行名额持有区间（resume → pause 确认）</text>
+      </svg>
+    </div>
+  </div>
+
+  <h2>数据怎么走</h2>
+  <div class="card">
+    <div class="diagram">
+      <svg viewBox="0 0 1400 410" role="img" aria-label="数据通道图">
+        <defs>
+          <marker id="arrD" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"></path>
+          </marker>
+        </defs>
+
+        <rect x="60" y="150" width="150" height="80" rx="10" fill="#dbeafe" stroke="#2563eb"></rect>
+        <text x="135" y="185" text-anchor="middle" font-size="14" font-weight="700" fill="#1e3a8a">Worker</text>
+        <text x="135" y="207" text-anchor="middle" font-size="11.5" fill="#3b82f6">执行线程</text>
+
+        <rect x="340" y="30" width="200" height="62" rx="10" fill="#cffafe" stroke="#0891b2"></rect>
+        <text x="440" y="57" text-anchor="middle" font-size="13.5" font-weight="700" fill="#155e75">AENV 控制面</text>
+        <text x="440" y="77" text-anchor="middle" font-size="11" fill="#0e7490">管理沙箱 / 发快照指令</text>
+
+        <rect x="700" y="30" width="220" height="62" rx="10" fill="#ffedd5" stroke="#ea580c"></rect>
+        <text x="810" y="57" text-anchor="middle" font-size="13.5" font-weight="700" fill="#7c2d12">快照磁盘</text>
+        <text x="810" y="77" text-anchor="middle" font-size="11" fill="#c2410c">AENV 本地目录</text>
+
+        <rect x="340" y="270" width="200" height="62" rx="10" fill="#dcfce7" stroke="#16a34a"></rect>
+        <text x="440" y="297" text-anchor="middle" font-size="13.5" font-weight="700" fill="#14532d">envd</text>
+        <text x="440" y="317" text-anchor="middle" font-size="11" fill="#15803d">沙箱里接命令</text>
+
+        <rect x="700" y="270" width="220" height="62" rx="10" fill="#e2e8f0" stroke="#64748b"></rect>
+        <text x="810" y="297" text-anchor="middle" font-size="13.5" font-weight="700" fill="#334155">series.jsonl</text>
+        <text x="810" y="317" text-anchor="middle" font-size="11" fill="#64748b">每事件一行</text>
+
+        <rect x="1050" y="270" width="220" height="62" rx="10" fill="#e2e8f0" stroke="#64748b"></rect>
+        <text x="1160" y="297" text-anchor="middle" font-size="13.5" font-weight="700" fill="#334155">汇总 CSV</text>
+        <text x="1160" y="317" text-anchor="middle" font-size="11" fill="#64748b">trial / ratio / detail</text>
+
+        <!-- worker -> aenv -->
+        <line x1="204" y1="152" x2="336" y2="67" stroke="#2563eb" stroke-width="1.7" marker-end="url(#arrD)"></line>
+        <text x="270" y="97" text-anchor="middle" font-size="11.5" fill="#1d4ed8">HTTP · create / pause / connect</text>
+
+        <!-- aenv -> worker -->
+        <line x1="338" y1="88" x2="206" y2="172" stroke="#0891b2" stroke-width="1.3" stroke-dasharray="6 4" marker-end="url(#arrD)"></line>
+        <text x="286" y="145" text-anchor="middle" font-size="11" fill="#0e7490">JSON 回执</text>
+
+        <!-- aenv -> fc -->
+        <line x1="544" y1="61" x2="696" y2="61" stroke="#0891b2" stroke-width="1.7" marker-end="url(#arrD)"></line>
+        <text x="620" y="50" text-anchor="middle" font-size="11.5" fill="#0e7490">读 / 写快照</text>
+
+        <!-- worker -> envd -->
+        <line x1="204" y1="228" x2="336" y2="292" stroke="#2563eb" stroke-width="1.7" marker-end="url(#arrD)"></line>
+        <text x="252" y="278" text-anchor="middle" font-size="11.5" fill="#1d4ed8">HTTP · Process/Start</text>
+
+        <!-- envd -> worker -->
+        <line x1="338" y1="312" x2="206" y2="248" stroke="#16a34a" stroke-width="1.3" stroke-dasharray="6 4" marker-end="url(#arrD)"></line>
+        <text x="300" y="330" text-anchor="middle" font-size="11" fill="#15803d">exit_code / 输出</text>
+
+        <!-- worker -> series (route below envd) -->
+        <path d="M 135 234 v 122 h 670 v -18" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrD)"></path>
+        <text x="470" y="372" text-anchor="middle" font-size="11.5" fill="#475569">每一步追加事件（JSONL）</text>
+
+        <!-- series -> report -->
+        <line x1="924" y1="301" x2="1046" y2="301" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrD)"></line>
+        <text x="985" y="291" text-anchor="middle" font-size="11" fill="#475569">扫描汇总</text>
+      </svg>
+    </div>
+  </div>
+
+  <h2>五个请求地址</h2>
+  <div class="ep-grid">
+    <div class="ep"><span class="m post">POST</span><code>{E2B_API_URL}/sandboxes</code></div>
+    <div class="ep"><span class="m post">POST</span><code>/sandboxes/{id}/pause</code></div>
+    <div class="ep"><span class="m post">POST</span><code>/sandboxes/{id}/connect</code></div>
+    <div class="ep"><span class="m post">POST</span><code>https://49983-{id}.{domain}/process.Process/Start</code></div>
+    <div class="ep"><span class="m del">DELETE</span><code>/sandboxes/{id}</code></div>
+  </div>
+  <p class="foot" style="margin-top:10px">
+    控制面用 <code>E2B_API_URL</code>，JSON 收发；执行命令走 envd，端口 <code>49983</code>，Connect 协议（HTTP POST + protobuf）。
+  </p>
+
+  <h2>时间去哪了</h2>
+  <div class="card">
+    <div class="diagram">
+      <svg viewBox="0 0 1400 310" role="img" aria-label="一次交互的时间构成">
+        <defs>
+          <marker id="arrT" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"></path>
+          </marker>
+        </defs>
+
+        <text x="60" y="42" font-size="14" font-weight="700" fill="#0f172a">一次交互 = 下面五段之和</text>
+        <text x="60" y="64" font-size="12" fill="#64748b">示意比例，不是实测值</text>
+
+        <g font-size="12.5">
+          <rect x="60" y="90" width="240" height="64" fill="#dbeafe" stroke="#93c5fd"></rect>
+          <text x="180" y="117" text-anchor="middle" font-weight="700" fill="#1e40af">间隔</text>
+          <text x="180" y="138" text-anchor="middle" font-size="10.5" fill="#3b82f6">natural_delay_sec</text>
+
+          <rect x="300" y="90" width="160" height="64" fill="#ede9fe" stroke="#c4b5fd"></rect>
+          <text x="380" y="117" text-anchor="middle" font-weight="700" fill="#5b21b6">排队</text>
+          <text x="380" y="138" text-anchor="middle" font-size="10.5" fill="#7c3aed">capacity_wait_sec</text>
+
+          <rect x="460" y="90" width="200" height="64" fill="#cffafe" stroke="#67e8f9"></rect>
+          <text x="560" y="117" text-anchor="middle" font-weight="700" fill="#155e75">唤醒</text>
+          <text x="560" y="138" text-anchor="middle" font-size="10.5" fill="#0891b2">resume_sec</text>
+
+          <rect x="660" y="90" width="440" height="64" fill="#dcfce7" stroke="#86efac"></rect>
+          <text x="880" y="117" text-anchor="middle" font-weight="700" fill="#14532d">执行命令</text>
+          <text x="880" y="138" text-anchor="middle" font-size="10.5" fill="#16a34a">exec_sec</text>
+
+          <rect x="1100" y="90" width="240" height="64" fill="#ffedd5" stroke="#fdba74"></rect>
+          <text x="1220" y="117" text-anchor="middle" font-weight="700" fill="#7c2d12">暂停</text>
+          <text x="1220" y="138" text-anchor="middle" font-size="10.5" fill="#ea580c">pause_sec</text>
+        </g>
+
+        <path d="M 460 78 v -16 h 880 v 16" fill="none" stroke="#7c3aed" stroke-width="1.4"></path>
+        <rect x="760" y="40" width="280" height="24" rx="12" fill="#f5f3ff" stroke="#c4b5fd"></rect>
+        <text x="900" y="57" text-anchor="middle" font-size="12" font-weight="600" fill="#6d28d9">运行名额持有区间（租约）</text>
+
+        <line x1="60" y1="190" x2="1340" y2="190" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrT)"></line>
+        <text x="60" y="214" font-size="12" fill="#64748b">时间 →</text>
+
+        <rect x="60" y="240" width="1280" height="34" rx="8" fill="#f8fafc" stroke="#e2e8f0"></rect>
+        <text x="76" y="262" font-size="12" fill="#475569">
+          名额不会提前放行：pause 确认完成、内存真正释放之后，才轮到下一个沙箱
+        </text>
+      </svg>
+    </div>
+  </div>
+
+  <div class="chips" style="margin-top:12px">
+    <span class="chip"><code>resume_sec</code> = 等配额 + 请求 + 探活</span>
+    <span class="chip"><code>pause_sec</code> = 等限速 + 等配额 + 请求</span>
+    <span class="chip"><code>running_slot_held_sec</code> ≈ 唤醒 + 执行 + 暂停</span>
+    <span class="chip">默认：间隔 1.0×｜超时 300s｜重试 2 次｜探活开</span>
+  </div>
+
+  <h2>失败时怎么走</h2>
+  <div class="card">
+    <div class="diagram">
+      <svg viewBox="0 0 1400 430" role="img" aria-label="失败与重试路径图">
+        <defs>
+          <marker id="arrF" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"></path>
+          </marker>
+        </defs>
+
+        <g font-size="12.5">
+          <!-- track 1 -->
+          <rect x="40" y="30" width="300" height="50" rx="9" fill="#f1f5f9" stroke="#94a3b8"></rect>
+          <text x="190" y="60" text-anchor="middle" fill="#334155">控制面临时错误</text>
+          <line x1="344" y1="55" x2="414" y2="55" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="418" y="30" width="300" height="50" rx="9" fill="#ede9fe" stroke="#7c3aed"></rect>
+          <text x="568" y="60" text-anchor="middle" fill="#4c1d95">重试（最多 2 次，共 3 次尝试）</text>
+          <line x1="722" y1="55" x2="792" y2="55" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="796" y="30" width="300" height="50" rx="9" fill="#dcfce7" stroke="#16a34a"></rect>
+          <text x="946" y="50" text-anchor="middle" fill="#14532d">成功：继续这一步</text>
+          <text x="946" y="69" text-anchor="middle" font-size="11" fill="#15803d">耗尽：记失败，进入下一行</text>
+          <text x="1120" y="60" font-size="11" fill="#64748b">← 非临时错误不重试</text>
+
+          <!-- track 2 -->
+          <rect x="40" y="115" width="300" height="50" rx="9" fill="#f1f5f9" stroke="#94a3b8"></rect>
+          <text x="190" y="145" text-anchor="middle" fill="#334155">命令超过 action_timeout</text>
+          <line x1="344" y1="140" x2="414" y2="140" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="418" y="115" width="300" height="50" rx="9" fill="#ffedd5" stroke="#ea580c"></rect>
+          <text x="568" y="145" text-anchor="middle" fill="#7c2d12">exit_code = 124</text>
+          <line x1="722" y1="140" x2="792" y2="140" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="796" y="115" width="300" height="50" rx="9" fill="#fee2e2" stroke="#dc2626"></rect>
+          <text x="946" y="145" text-anchor="middle" fill="#991b1b">记一条失败 step</text>
+
+          <!-- track 3 -->
+          <rect x="40" y="200" width="300" height="50" rx="9" fill="#f1f5f9" stroke="#94a3b8"></rect>
+          <text x="190" y="230" text-anchor="middle" fill="#334155">同一沙箱连续 3 次失败</text>
+          <line x1="344" y1="225" x2="414" y2="225" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="418" y="200" width="300" height="50" rx="9" fill="#fee2e2" stroke="#dc2626"></rect>
+          <text x="568" y="230" text-anchor="middle" fill="#991b1b">沙箱标记离线，不再领任务</text>
+          <text x="740" y="230" font-size="11" fill="#64748b">成功一次就清零</text>
+
+          <!-- track 4 -->
+          <rect x="40" y="285" width="300" height="50" rx="9" fill="#f1f5f9" stroke="#94a3b8"></rect>
+          <text x="190" y="315" text-anchor="middle" fill="#334155">stop_on_error = true</text>
+          <line x1="344" y1="310" x2="414" y2="310" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="418" y="285" width="300" height="50" rx="9" fill="#ede9fe" stroke="#7c3aed"></rect>
+          <text x="568" y="315" text-anchor="middle" fill="#4c1d95">放弃当前轨迹</text>
+          <line x1="722" y1="310" x2="792" y2="310" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="796" y="285" width="300" height="50" rx="9" fill="#e2e8f0" stroke="#64748b"></rect>
+          <text x="946" y="315" text-anchor="middle" fill="#334155">换下一条轨迹，不杀沙箱</text>
+
+          <!-- track 5 -->
+          <rect x="40" y="370" width="300" height="50" rx="9" fill="#f1f5f9" stroke="#94a3b8"></rect>
+          <text x="190" y="400" text-anchor="middle" fill="#334155">收到停止信号</text>
+          <line x1="344" y1="395" x2="414" y2="395" stroke="#475569" stroke-width="1.6" marker-end="url(#arrF)"></line>
+          <rect x="418" y="370" width="300" height="50" rx="9" fill="#e2e8f0" stroke="#64748b"></rect>
+          <text x="568" y="400" text-anchor="middle" fill="#334155">排队直接打断，立即退出</text>
+          <text x="740" y="400" font-size="11" fill="#64748b">不计入失败</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <p class="foot">
+    依据源码：<code>src/bench_core/task_runner/replay.py</code>（<code>_init_lifecycle</code>、<code>_run_slice</code>、<code>_probe_ready</code>、<code>_replay_trajectory</code>）、
+    <code>src/bench_core/admission.py</code>（<code>RunningSlotScheduler</code>）、
+    <code>src/bench_core/task_runner/replay_config.py</code>（默认值）、<code>src/bench_core/bench.py</code>（Phase 1 create_all、Phase 4 round-robin）。
+  </p>
+</div>
+</body>
+</html>
